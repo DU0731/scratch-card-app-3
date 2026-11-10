@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧選物店 - 線上大盤輪刮刮樂 APP</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- QRCode.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Canvas Confetti Library -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        .scratch-card-grid-40 {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 6px;
+            margin: 0 auto;
+            max-width: 600px;
+        }
+        .scratch-card-grid-60 {
+            display: grid;
+            grid-template-columns: repeat(10, minmax(0, 1fr));
+            gap: 5px;
+            margin: 0 auto;
+            max-width: 680px;
+        }
+        .scratch-card-grid-80 {
+            display: grid;
+            grid-template-columns: repeat(10, minmax(0, 1fr));
+            gap: 4px;
+            margin: 0 auto;
+            max-width: 720px;
+        }
+        .scratch-cell {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .prize-layer {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            text-align: center;
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            font-size: 10px;
+        }
+        .prize-layer.revealed-empty {
+            background: #e2e8f0;
+            border-color: #cbd5e1;
+            color: #64748b;
+        }
+        .canvas-layer {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            touch-action: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-slate-800/90 backdrop-blur sticky top-0 z-50 border-b border-slate-700">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-gamepad text-amber-400 text-xl"></i>
+                <span class="font-bold text-lg text-white">智慧選物店 - 大盤輪刮樂系統</span>
+            </div>
+            <div class="flex space-x-2">
+                <button id="btn-view-admin" onclick="switchView('admin')" class="px-3 py-1.5 rounded-lg text-sm font-medium transition bg-amber-500 text-slate-950 font-bold hover:bg-amber-400">
+                    <i class="fa-solid fa-gear mr-1"></i> 店家後台
+                </button>
+                <button id="btn-view-customer" onclick="switchView('customer')" class="px-3 py-1.5 rounded-lg text-sm font-medium transition bg-slate-700 text-slate-200 hover:bg-slate-600">
+                    <i class="fa-solid fa-mobile-screen mr-1"></i> 顧客視角
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto p-4 md:p-6">
+
+        <!-- ================= 後台管理頁面 ================= -->
+        <section id="admin-view" class="space-y-6">
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-4">
+                <h2 class="text-xl font-bold text-amber-400 flex items-center">
+                    <i class="fa-solid fa-sliders mr-2"></i> 活動與大盤網格參數設定
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1 text-slate-300">活動名稱</label>
+                        <input type="text" id="cfg-title" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400" value="🎁 夾物達人專屬幸運大刮刮樂">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1 text-slate-300">總網格數量 (大盤格數)</label>
+                        <select id="cfg-grid-size" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400">
+                            <option value="40">40 格 ( 8 x 5 排列 )</option>
+                            <option value="60">60 格 ( 10 x 6 排列 )</option>
+                            <option value="80">80 格 ( 10 x 8 排列 )</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1 text-slate-300">換算比例 (幾樣夾物 = 1 刮)</label>
+                        <input type="number" id="cfg-ratio" min="1" max="10" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400" value="1">
+                    </div>
+                </div>
+
+                <!-- Google 雲端紀錄 webhook -->
+                <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-700 space-y-3">
+                    <h3 class="text-sm font-bold text-amber-300 flex items-center">
+                        <i class="fa-brands fa-google-drive mr-2"></i> Google 雲端試算表紀錄整合 (Google Apps Script Webhook)
+                    </h3>
+                    <p class="text-xs text-slate-400">填入 Apps Script Webhook 網址，系統會自動在雲端試算表記錄顧客夾物數、刮開格數與中獎結果。</p>
+                    <input type="text" id="cfg-webhook" placeholder="https://script.google.com/macros/s/..." class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 font-mono focus:outline-none focus:border-amber-400">
+                </div>
+
+                <!-- 獎項數量設定 -->
+                <div class="space-y-3 pt-2">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-200">大盤中獎獎項清單 (自訂數量與名稱)</label>
+                            <p class="text-xs text-slate-400">系統自動將總格數中剩餘的格子補滿「銘謝惠顧」，並隨機洗牌佈局。</p>
+                        </div>
+                        <button onclick="addPrizeConfigRow()" class="text-xs bg-slate-700 hover:bg-slate-600 text-amber-300 px-3 py-1.5 rounded-lg transition font-medium">
+                            <i class="fa-solid fa-plus mr-1"></i> 新增獎項
+                        </button>
+                    </div>
+                    <div id="prize-config-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        <!-- 動態生成獎項 -->
+                    </div>
+                </div>
+
+                <div class="pt-4 flex flex-wrap gap-3">
+                    <button onclick="saveAndGenerateQRCode()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl transition shadow-lg flex items-center">
+                        <i class="fa-solid fa-qrcode mr-2"></i> 開啟新一盤活動並更新 QR Code
+                    </button>
+                </div>
+            </div>
+
+            <!-- 機台 QR Code 區 -->
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl flex flex-col md:flex-row items-center gap-6">
+                <div class="bg-white p-3 rounded-xl shadow-inner border" id="qrcode-box">
+                    <div id="qrcode"></div>
+                </div>
+                <div class="flex-1 space-y-3 text-center md:text-left">
+                    <h3 class="text-lg font-bold text-white flex items-center justify-center md:justify-start">
+                        <i class="fa-solid fa-share-nodes text-amber-400 mr-2"></i> 機台專屬固定 QR Code
+                    </h3>
+                    <p class="text-xs text-slate-400">客人掃描此 QR Code 都會進入相同的「活動大盤」，已刮開的格子不會重複刮，直至全盤大獎刮完。</p>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="share-url" readonly class="flex-1 bg-slate-900 border border-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs font-mono select-all">
+                        <button onclick="copyShareUrl()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-xs font-medium text-amber-400 transition">
+                            <i class="fa-solid fa-copy mr-1"></i> 複製連結
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= 顧客刮刮樂體驗頁面 ================= -->
+        <section id="customer-view" class="hidden space-y-4">
+            
+            <!-- 大盤全數完成/完刮鎖定視圖 -->
+            <div id="board-finished-view" class="hidden bg-slate-800 p-8 rounded-2xl border border-amber-500/50 text-center space-y-4 max-w-md mx-auto shadow-2xl my-12">
+                <div class="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+                    <i class="fa-solid fa-flag-checkered"></i>
+                </div>
+                <h2 class="text-xl font-bold text-white">本盤刮刮樂活動已圓滿結束！</h2>
+                <p class="text-xs text-slate-300">本大盤所有格子或大獎已被幸運顧客刮完。請關注機台最新活動，向現場人員確認下一盤開盤時間！</p>
+            </div>
+
+            <!-- 正常互動刮區 -->
+            <div id="active-scratch-area" class="space-y-4">
+                <div class="text-center space-y-1">
+                    <h1 id="disp-title" class="text-2xl md:text-3xl font-extrabold text-amber-400">🎁 夾物達人專屬幸運大刮刮樂</h1>
+                    <p class="text-xs md:text-sm text-slate-400">選取未刮開的格子塗抹銀漆，已刮開的格子為全店共享狀態！</p>
+                </div>
+
+                <!-- 狀態資訊 -->
+                <div class="bg-slate-800/90 max-w-xl mx-auto p-3 rounded-xl border border-slate-700 flex flex-wrap justify-around items-center px-4 shadow-md text-xs md:text-sm gap-2">
+                    <div><span class="text-slate-400">夾出商品：</span><span class="font-bold text-white" id="disp-caught-count">0</span> 樣</div>
+                    <div><span class="text-slate-400">本輪獲得：</span><span class="font-bold text-amber-400 text-base" id="disp-total-scratches">0</span> 刮</div>
+                    <div><span class="text-slate-400">本輪剩餘：</span><span class="font-bold text-rose-400 text-base" id="disp-remaining-scratches">0</span> 刮</div>
+                    <div><span class="text-slate-400">大盤未刮：</span><span class="font-bold text-emerald-400 text-base" id="disp-board-remaining">0</span> 格</div>
+                </div>
+
+                <!-- 網格容器 -->
+                <div id="scratch-grid-container"></div>
+
+                <div class="text-center pt-2">
+                    <button onclick="simulateReScanSameQR()" class="text-xs text-slate-400 underline hover:text-amber-400 transition">
+                        <i class="fa-solid fa-qrcode mr-1"></i> 模擬再夾物，重新掃描同一個 QR Code
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 夾物數量輸入彈窗 -->
+    <div id="input-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-amber-500/50 p-6 md:p-8 rounded-2xl max-w-sm w-full text-center space-y-5 shadow-2xl">
+            <div class="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+                <i class="fa-solid fa-bag-shopping"></i>
+            </div>
+            <div class="space-y-1">
+                <h3 class="text-xl font-bold text-white">歡迎來到刮刮樂專區！</h3>
+                <p class="text-xs text-slate-300">請輸入您剛剛在機台夾出的商品總數量：</p>
+            </div>
+            <div>
+                <input type="number" id="user-input-caught" min="1" max="100" value="1" class="w-full bg-slate-900 border-2 border-amber-500/60 rounded-xl px-4 py-3 text-center text-2xl font-black text-amber-400 focus:outline-none focus:border-amber-400">
+                <p class="text-[11px] text-slate-400 mt-1.5" id="ratio-hint">換算規則：每夾 1 樣可獲得 1 次刮獎機會</p>
+            </div>
+            <button onclick="confirmCaughtItems()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl transition shadow-lg text-base">
+                確認數量，進入大盤刮獎！
+            </button>
+        </div>
+    </div>
+
+    <!-- 本輪結束結算彈窗 -->
+    <div id="result-modal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-amber-500/50 p-6 md:p-8 rounded-2xl max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <div class="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto text-3xl">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white">恭喜完成本輪刮獎！</h3>
+            <div class="bg-slate-900/90 p-4 rounded-xl border border-slate-700 text-amber-300 text-xs font-bold space-y-1.5 max-h-48 overflow-y-auto text-left" id="modal-prize-summary">
+                <!-- 填入結果 -->
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">本輪剩餘次數已刮完！若您有繼續夾出商品，請**重新掃描機台 QR Code** 即可繼續刮剩餘大盤格子！</p>
+            <button onclick="closeResultModal()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl transition">
+                好的，我知道了
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let appConfig = {
+            boardId: "board_default",
+            title: "🎁 夾物達人專屬幸運大刮刮樂",
+            gridSize: 40,
+            ratio: 1,
+            webhookUrl: "",
+            prizesConfig: [
+                { name: "🎉 頭獎：大公仔乙隻", count: 2 },
+                { name: "🎁 二獎：精美盲盒乙個", count: 3 },
+                { name: "🥤 三獎：飲品兌換券", count: 5 }
+            ]
+        };
+
+        let currentBoardState = []; // 紀錄大盤各格內容與狀態 { revealed: bool, prize: str }
+        let caughtItemsCount = 0;
+        let allowedScratches = 0;
+        let roundScratchedCount = 0;
+        let qrCodeInstance = null;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadConfigFromURL();
+            initAdminInputs();
+            renderPrizeConfigRows();
+            generateQRCode();
+            checkCustomerState();
+        });
+
+        function switchView(view) {
+            const adminSec = document.getElementById('admin-view');
+            const custSec = document.getElementById('customer-view');
+            const btnAdmin = document.getElementById('btn-view-admin');
+            const btnCust = document.getElementById('btn-view-customer');
+
+            if (view === 'admin') {
+                adminSec.classList.remove('hidden');
+                custSec.classList.add('hidden');
+                btnAdmin.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition bg-amber-500 text-slate-950 font-bold hover:bg-amber-400";
+                btnCust.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition bg-slate-700 text-slate-200 hover:bg-slate-600";
+            } else {
+                adminSec.classList.add('hidden');
+                custSec.classList.remove('hidden');
+                btnCust.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition bg-amber-500 text-slate-950 font-bold hover:bg-amber-400";
+                btnAdmin.className = "px-3 py-1.5 rounded-lg text-sm font-medium transition bg-slate-700 text-slate-200 hover:bg-slate-600";
+                checkCustomerState();
+            }
+        }
+
+        function initAdminInputs() {
+            document.getElementById('cfg-title').value = appConfig.title;
+            document.getElementById('cfg-grid-size').value = appConfig.gridSize;
+            document.getElementById('cfg-ratio').value = appConfig.ratio;
+            document.getElementById('cfg-webhook').value = appConfig.webhookUrl;
+        }
+
+        function renderPrizeConfigRows() {
+            const list = document.getElementById('prize-config-list');
+            list.innerHTML = '';
+            appConfig.prizesConfig.forEach((p, idx) => {
+                const row = document.createElement('div');
+                row.className = "flex items-center space-x-2 bg-slate-900 p-2 rounded-lg border border-slate-700";
+                row.innerHTML = `
+                    <span class="text-xs text-slate-400 font-mono w-6">#${idx+1}</span>
+                    <input type="text" value="${p.name}" onchange="updatePrizeName(${idx}, this.value)" placeholder="獎項名稱" class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-xs text-white focus:outline-none focus:border-amber-400">
+                    <div class="flex items-center space-x-1">
+                        <span class="text-xs text-slate-400">數量:</span>
+                        <input type="number" min="1" value="${p.count}" onchange="updatePrizeCount(${idx}, this.value)" class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white text-center focus:outline-none focus:border-amber-400">
+                    </div>
+                    <button onclick="removePrizeConfigRow(${idx})" class="text-rose-400 hover:text-rose-300 p-1"><i class="fa-solid fa-trash"></i></button>
+                `;
+                list.appendChild(row);
+            });
+        }
+
+        function addPrizeConfigRow() {
+            appConfig.prizesConfig.push({ name: "🎁 幸運小獎乙份", count: 2 });
+            renderPrizeConfigRows();
+        }
+
+        function removePrizeConfigRow(idx) {
+            if (appConfig.prizesConfig.length <= 1) return alert("至少需保留一個中獎項目！");
+            appConfig.prizesConfig.splice(idx, 1);
+            renderPrizeConfigRows();
+        }
+
+        function updatePrizeName(idx, val) { appConfig.prizesConfig[idx].name = val; }
+        function updatePrizeCount(idx, val) { appConfig.prizesConfig[idx].count = parseInt(val) || 1; }
+
+        function saveAndGenerateQRCode() {
+            appConfig.title = document.getElementById('cfg-title').value.trim();
+            appConfig.gridSize = parseInt(document.getElementById('cfg-grid-size').value) || 40;
+            appConfig.ratio = parseInt(document.getElementById('cfg-ratio').value) || 1;
+            appConfig.webhookUrl = document.getElementById('cfg-webhook').value.trim();
+            appConfig.boardId = "board_" + Date.now().toString(36);
+
+            // 清除舊大盤快取，重置全新大盤
+            localStorage.removeItem('board_state_' + appConfig.boardId);
+            
+            generateQRCode();
+            alert("✅ 新大盤活動已成功開啟！已生成專屬 QR Code。");
+        }
+
+        function generateQRCode() {
+            const payload = { config: appConfig };
+            const encoded = encodeURIComponent(JSON.stringify(payload));
+            const shareUrl = `${window.location.origin}${window.location.pathname}#board=${encoded}`;
+            
+            document.getElementById('share-url').value = shareUrl;
+
+            const qrBox = document.getElementById('qrcode');
+            qrBox.innerHTML = '';
+            qrCodeInstance = new QRCode(qrBox, {
+                text: shareUrl,
+                width: 170,
+                height: 170,
+                colorDark : "#0f172a",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.M
+            });
+        }
+
+        function loadConfigFromURL() {
+            if (window.location.hash.startsWith('#board=')) {
+                try {
+                    const raw = window.location.hash.replace('#board=', '');
+                    const parsed = JSON.parse(decodeURIComponent(raw));
+                    if (parsed && parsed.config) {
+                        appConfig = parsed.config;
+                        switchView('customer');
+                        return;
+                    }
+                } catch(e) {
+                    console.error("解析 URL 設定失敗", e);
+                }
+            }
+        }
+
+        function copyShareUrl() {
+            const input = document.getElementById('share-url');
+            input.select();
+            document.execCommand('copy');
+            alert("📋 連結已複製！");
+        }
+
+        function simulateReScanSameQR() {
+            // 模擬重新掃描同一個 QR Code：開啟輸入夾物數量的彈窗
+            document.getElementById('ratio-hint').innerText = `換算規則：每夾 ${appConfig.ratio} 樣可獲得 1 次刮獎機會`;
+            document.getElementById('input-modal').classList.remove('hidden');
+        }
+
+        function checkCustomerState() {
+            loadOrCreateBoardState();
+
+            const unrevealed = currentBoardState.filter(c => !c.revealed).length;
+            if (unrevealed === 0) {
+                document.getElementById('board-finished-view').classList.remove('hidden');
+                document.getElementById('active-scratch-area').classList.add('hidden');
+                document.getElementById('input-modal').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('board-finished-view').classList.add('hidden');
+            document.getElementById('active-scratch-area').classList.remove('hidden');
+            document.getElementById('ratio-hint').innerText = `換算規則：每夾 ${appConfig.ratio} 樣可獲得 1 次刮獎機會`;
+            document.getElementById('input-modal').classList.remove('hidden');
+        }
+
+        function loadOrCreateBoardState() {
+            const saved = localStorage.getItem('board_state_' + appConfig.boardId);
+            if (saved) {
+                try {
+                    currentBoardState = JSON.parse(saved);
+                    return;
+                } catch(e) {}
+            }
+
+            // 建立全新大盤洗牌
+            let pool = [];
+            appConfig.prizesConfig.forEach(p => {
+                for(let i=0; i<p.count; i++) pool.push(p.name);
+            });
+            const remainder = appConfig.gridSize - pool.length;
+            for(let i=0; i<remainder; i++) pool.push("銘謝惠顧 🍀 祝您下次中獎");
+
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            currentBoardState = pool.map(p => ({ revealed: false, prize: p }));
+            saveBoardState();
+        }
+
+        function saveBoardState() {
+            localStorage.setItem('board_state_' + appConfig.boardId, JSON.stringify(currentBoardState));
+        }
+
+        function confirmCaughtItems() {
+            const val = parseInt(document.getElementById('user-input-caught').value);
+            if (isNaN(val) || val <= 0) return alert("請輸入有效的商品數量！");
+            
+            caughtItemsCount = val;
+            document.getElementById('input-modal').classList.add('hidden');
+
+            initCustomerRound();
+        }
+
+        function initCustomerRound() {
+            document.getElementById('disp-title').innerText = appConfig.title;
+            document.getElementById('disp-caught-count').innerText = caughtItemsCount;
+
+            const unrevealedCount = currentBoardState.filter(c => !c.revealed).length;
+
+            allowedScratches = Math.min(unrevealedCount, Math.floor(caughtItemsCount / appConfig.ratio));
+            if (allowedScratches < 1 && caughtItemsCount > 0 && unrevealedCount > 0) allowedScratches = 1;
+
+            roundScratchedCount = 0;
+            updateStatusDisplays();
+            renderGridBoard();
+        }
+
+        function updateStatusDisplays() {
+            const remainingRound = Math.max(0, allowedScratches - roundScratchedCount);
+            const unrevealedBoard = currentBoardState.filter(c => !c.revealed).length;
+
+            document.getElementById('disp-total-scratches').innerText = allowedScratches;
+            document.getElementById('disp-remaining-scratches').innerText = remainingRound;
+            document.getElementById('disp-board-remaining').innerText = unrevealedBoard;
+        }
+
+        function renderGridBoard() {
+            const container = document.getElementById('scratch-grid-container');
+            container.innerHTML = '';
+            container.className = `scratch-card-grid-${appConfig.gridSize}`;
+
+            currentBoardState.forEach((cellData, idx) => {
+                const cell = document.createElement('div');
+                cell.className = 'scratch-cell';
+
+                const prizeLayer = document.createElement('div');
+                prizeLayer.className = 'prize-layer' + (cellData.revealed && cellData.prize.includes('銘謝惠顧') ? ' revealed-empty' : '');
+                prizeLayer.innerHTML = `<span class="font-bold leading-tight">${cellData.prize}</span>`;
+                cell.appendChild(prizeLayer);
+
+                if (!cellData.revealed) {
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'canvas-layer';
+                    cell.appendChild(canvas);
+                    setupScratchCanvas(canvas, idx);
+                }
+
+                container.appendChild(cell);
+            });
+        }
+
+        function setupScratchCanvas(canvas, index) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width || 80;
+            canvas.height = rect.height || 80;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = "#94a3b8";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+            ctx.font = "bold 11px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`#${index+1}`, canvas.width / 2, canvas.height / 2);
+
+            let isDrawing = false;
+
+            function getPos(e) {
+                const b = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - b.left, y: clientY - b.top };
+            }
+
+            function scratch(e) {
+                if (!isDrawing || currentBoardState[index].revealed) return;
+
+                const remainingRound = allowedScratches - roundScratchedCount;
+                if (remainingRound <= 0) {
+                    alert("您本輪的刮卡次數已用完！若重新夾出商品，請重新掃碼進行下一輪。");
+                    isDrawing = false;
+                    return;
+                }
+
+                const pos = getPos(e);
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 14, 0, Math.PI * 2);
+                ctx.fill();
+
+                checkScratchPercentage(canvas, index);
+            }
+
+            canvas.addEventListener('mousedown', (e) => { isDrawing = true; scratch(e); });
+            canvas.addEventListener('mousemove', scratch);
+            canvas.addEventListener('mouseup', () => isDrawing = false);
+            canvas.addEventListener('touchstart', (e) => { isDrawing = true; scratch(e); e.preventDefault(); });
+            canvas.addEventListener('touchmove', (e) => { scratch(e); e.preventDefault(); });
+            canvas.addEventListener('touchend', () => isDrawing = false);
+        }
+
+        function checkScratchPercentage(canvas, index) {
+            if (currentBoardState[index].revealed) return;
+
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            let clearPixels = 0;
+            for (let i = 3; i < imgData.data.length; i += 4) {
+                if (imgData.data[i] === 0) clearPixels++;
+            }
+
+            if (clearPixels / (canvas.width * canvas.height) > 0.30) {
+                currentBoardState[index].revealed = true;
+                saveBoardState();
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                roundScratchedCount++;
+                updateStatusDisplays();
+
+                logToCloudDrive("ScratchCellRevealed", { index: index + 1, prize: currentBoardState[index].prize });
+
+                if (roundScratchedCount >= allowedScratches) {
+                    setTimeout(showResultModal, 450);
+                }
+            }
+        }
+
+        function showResultModal() {
+            const summaryBox = document.getElementById('modal-prize-summary');
+            summaryBox.innerHTML = '';
+
+            // 抓出本輪刮出的項目 (最新刮開的幾項)
+            const revealedList = currentBoardState.filter(c => c.revealed);
+            const thisRoundPrizes = revealedList.slice(-roundScratchedCount);
+
+            thisRoundPrizes.forEach((item, idx) => {
+                const d = document.createElement('div');
+                d.className = "flex justify-between items-center py-1 border-b border-slate-800 text-xs";
+                d.innerHTML = `<span>第 ${idx + 1} 刮：</span><span class="font-bold text-amber-300">${item.prize}</span>`;
+                summaryBox.appendChild(d);
+            });
+
+            document.getElementById('result-modal').classList.remove('hidden');
+
+            if (typeof confetti === 'function') {
+                confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+            }
+        }
+
+        function closeResultModal() {
+            document.getElementById('result-modal').classList.add('hidden');
+            
+            // 檢查大盤是否已完全完刮
+            const unrevealedBoard = currentBoardState.filter(c => !c.revealed).length;
+            if (unrevealedBoard === 0) {
+                document.getElementById('board-finished-view').classList.remove('hidden');
+                document.getElementById('active-scratch-area').classList.add('hidden');
+            }
+        }
+
+        function logToCloudDrive(actionType, extraData) {
+            if (!appConfig.webhookUrl) return;
+            
+            const payload = {
+                boardId: appConfig.boardId,
+                action: actionType,
+                caughtItems: caughtItemsCount,
+                scratchesAllowed: allowedScratches,
+                timestamp: new Date().toISOString(),
+                data: extraData
+            };
+
+            fetch(appConfig.webhookUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).catch(err => console.log("Cloud log error:", err));
+        }
+    </script>
+</body>
+</html>
